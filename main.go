@@ -30,7 +30,17 @@ func versionHandler(c *gin.Context) {
 
 // healthCheckHandler reports the health of the serivce
 func healthCheckHandler(c *gin.Context) {
-	c.String(http.StatusOK, "APTrust Virgo is alive")
+	hcMap := make(map[string]string)
+	hcMap["AriesVirgo"] = "true"
+	// ping the api with a minimal request to see if it is alive
+	url := fmt.Sprintf("%s/%s/select?q=*:*&wt=json&rows=0", solrURL, solrCore)
+	_, err := getAPIResponse(url)
+	if err != nil {
+		hcMap["Virgo"] = "false"
+	} else {
+		hcMap["Virgo"] = "true"
+	}
+	c.JSON(http.StatusOK, hcMap)
 }
 
 /// ariesPing handles requests to the aries endpoint with no params.
