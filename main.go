@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -51,7 +53,20 @@ func ariesPing(c *gin.Context) {
 
 // ariesLookup will query APTrust for information on the supplied identifer
 func ariesLookup(c *gin.Context) {
-	c.String(http.StatusNotFound, "Service not implemented")
+	ID := c.Param("id")
+	var qps []string
+	qps = append(qps, url.QueryEscape(fmt.Sprintf("id:\"%s\"", ID)))
+	qps = append(qps, url.QueryEscape(fmt.Sprintf("alternate_id_facet:\"%s\"", ID)))
+	qps = append(qps, url.QueryEscape(fmt.Sprintf("barcode_facet:\"%s\"", ID)))
+	fl := "&fl=id,shadowed_location_facet,marc_display,alternate_id_facet,barcode_facet,title_display"
+	url := fmt.Sprintf("%s/%s/select?q=%s&wt=json&indent=true%s", solrURL, solrCore, strings.Join(qps, "+"), fl)
+	respStr, err := getAPIResponse(url)
+	if err != nil {
+		log.Printf("Query for %s FAILED: %s", ID, err.Error())
+		c.String(http.StatusNotFound, err.Error())
+		return
+	}
+	c.String(http.StatusOK, respStr)
 }
 
 // getAPIResponse is a helper used to call a JSON endpoint and return the resoponse as a string
