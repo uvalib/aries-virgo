@@ -24,9 +24,15 @@ var solrCore string
 
 // aries is the structure of the response returned by /api/aries/:id
 type aries struct {
-	Identifiers []string `json:"identifier,omitempty"`
-	AccessURL   []string `json:"access_url,omitempty"`
-	MetadataURL []string `json:"metadata_url,omitempty"`
+	Identifiers []string     `json:"identifier,omitempty"`
+	ServiceURL  []serviceURL `json:"service_url,omitempty"`
+	AccessURL   []string     `json:"access_url,omitempty"`
+	MetadataURL []string     `json:"metadata_url,omitempty"`
+}
+
+type serviceURL struct {
+	URL      string `json:"url,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
 }
 
 // solrFullResponse is the complete structure of a solr response. It is
@@ -96,8 +102,8 @@ func ariesLookup(c *gin.Context) {
 	qps = append(qps, url.QueryEscape(fmt.Sprintf("alternate_id_facet:\"%s\"", ID)))
 	qps = append(qps, url.QueryEscape(fmt.Sprintf("barcode_facet:\"%s\"", ID)))
 	fl := "&fl=id,shadowed_location_facet,marc_display,alternate_id_facet,barcode_facet"
-	url := fmt.Sprintf("%s/%s/select?q=%s&wt=json&indent=true%s", solrURL, solrCore, strings.Join(qps, "+"), fl)
-	respStr, err := getAPIResponse(url)
+	urlStr := fmt.Sprintf("%s/%s/select?q=%s&wt=json&indent=true%s", solrURL, solrCore, strings.Join(qps, "+"), fl)
+	respStr, err := getAPIResponse(urlStr)
 	if err != nil {
 		log.Printf("Query for %s FAILED: %s", ID, err.Error())
 		c.String(http.StatusNotFound, err.Error())
@@ -125,7 +131,27 @@ func ariesLookup(c *gin.Context) {
 		return
 	}
 
-	c.String(http.StatusOK, respStr)
+	if resp.Response.NumFound > 1 {
+		log.Printf("Query for %s had too many hits", ID)
+		c.String(http.StatusBadRequest, "%s has too many hits. Query: %s", ID, urlStr)
+		return
+	}
+
+	var out aries
+	doc := resp.Response.Docs[0]
+	out.Identifiers = append(out.Identifiers, doc.ID)
+	qp := url.QueryEscape(fmt.Sprintf("id:\"%s\"", doc.ID))
+	svcURL := serviceURL{
+		URL:      fmt.Sprintf("%s/%s/select?q=%s", solrURL, solrCore, qp),
+		Protocol: "indexed-record"}
+	out.ServiceURL = append(out.ServiceURL, svcURL)
+	if doc.ShadowedLocationFacet[0] == "HIDDEN" {
+
+	} else {
+
+	}
+
+	c.JSON(http.StatusOK, out)
 }
 
 // getAPIResponse is a helper used to call a JSON endpoint and return the resoponse as a string
