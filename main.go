@@ -21,6 +21,7 @@ const version = "1.0.0"
 // Config info; APTrust host and API key
 var solrURL string
 var solrCore string
+var virgoURL string
 
 // aries is the structure of the response returned by /api/aries/:id
 type aries struct {
@@ -50,18 +51,19 @@ type solrHeader struct {
 
 // solrResponse contains the details of hits from a solr query
 type solrResponse struct {
-	NumFound int        `json:"numFound"`
-	Start    int        `json:"start"`
-	Docs     []solrDocs `json:"docs"`
+	NumFound int       `json:"numFound"`
+	Start    int       `json:"start"`
+	Docs     []solrDoc `json:"docs"`
 }
 
-// solrDocs is the full response data returned by a solr query
-type solrDocs struct {
+// solrDoc is the full response data returned by a solr query
+type solrDoc struct {
 	ID                    string   `json:"id"`
 	ShadowedLocationFacet []string `json:"shadowed_location_facet"`
 	MarcDisplay           string   `json:"marc_display"`
 	AlternateIDFacet      []string `json:"alternate_id_facet"`
 	BarcodeFacet          []string `json:"barcode_facet"`
+	FeatureFacet          []string `json:"feature_facet"`
 }
 
 // favHandler is a dummy handler to silence browser API requests that look for /favicon.ico
@@ -96,62 +98,86 @@ func ariesPing(c *gin.Context) {
 
 // ariesLookup will query APTrust for information on the supplied identifer
 func ariesLookup(c *gin.Context) {
-	ID := c.Param("id")
+	passedID := c.Param("id")
 	var qps []string
-	qps = append(qps, url.QueryEscape(fmt.Sprintf("id:\"%s\"", ID)))
-	qps = append(qps, url.QueryEscape(fmt.Sprintf("alternate_id_facet:\"%s\"", ID)))
-	qps = append(qps, url.QueryEscape(fmt.Sprintf("barcode_facet:\"%s\"", ID)))
-	fl := "&fl=id,shadowed_location_facet,marc_display,alternate_id_facet,barcode_facet"
+	qps = append(qps, url.QueryEscape(fmt.Sprintf("id:\"%s\"", passedID)))
+	qps = append(qps, url.QueryEscape(fmt.Sprintf("alternate_id_facet:\"%s\"", passedID)))
+	qps = append(qps, url.QueryEscape(fmt.Sprintf("barcode_facet:\"%s\"", passedID)))
+	fl := "&fl=id,shadowed_location_facet,marc_display,alternate_id_facet,barcode_facet,feature_facet"
 	urlStr := fmt.Sprintf("%s/%s/select?q=%s&wt=json&indent=true%s", solrURL, solrCore, strings.Join(qps, "+"), fl)
 	respStr, err := getAPIResponse(urlStr)
 	if err != nil {
-		log.Printf("Query for %s FAILED: %s", ID, err.Error())
+		log.Printf("Query for %s FAILED: %s", passedID, err.Error())
 		c.String(http.StatusNotFound, err.Error())
 		return
 	}
 
-	log.Printf("Parsing solr response for #{ID}")
+	log.Printf("Parsing solr response for #{passedID}")
 	var resp solrFullResponse
 	marshallErr := json.Unmarshal([]byte(respStr), &resp)
 	if marshallErr != nil {
 		log.Printf("Unable to parse response: %s", marshallErr.Error())
-		c.String(http.StatusNotFound, "%s not found", ID)
+		c.String(http.StatusNotFound, "%s not found", passedID)
 		return
 	}
 
 	if resp.ResponseHeader.Status != 0 {
-		log.Printf("Failed response for %s: %d", ID, resp.ResponseHeader.Status)
-		c.String(http.StatusNotFound, "%s not found", ID)
+		log.Printf("Failed response for %s: %d", passedID, resp.ResponseHeader.Status)
+		c.String(http.StatusNotFound, "%s not found", passedID)
 		return
 	}
 
 	if resp.Response.NumFound == 0 {
-		log.Printf("Query for %s had no hits", ID)
-		c.String(http.StatusNotFound, "%s not found", ID)
+		log.Printf("Query for %s had no hits", passedID)
+		c.String(http.StatusNotFound, "%s not found", passedID)
 		return
 	}
 
 	if resp.Response.NumFound > 1 {
-		log.Printf("Query for %s had too many hits", ID)
-		c.String(http.StatusBadRequest, "%s has too many hits. Query: %s", ID, urlStr)
+		log.Printf("Query for %s had too many hits", passedID)
+		c.String(http.StatusBadRequest, "%s has too many hits. Query: %s", passedID, urlStr)
 		return
 	}
 
 	var out aries
 	doc := resp.Response.Docs[0]
 	out.Identifiers = append(out.Identifiers, doc.ID)
+	for _, altID := range doc.AlternateIDFacet {
+		out.Identifiers = append(out.Identifiers, altID)
+	}
+	for _, altID := range doc.BarcodeFacet {
+		out.Identifiers = append(out.Identifiers, altID)
+	}
 	qp := url.QueryEscape(fmt.Sprintf("id:\"%s\"", doc.ID))
 	svcURL := serviceURL{
 		URL:      fmt.Sprintf("%s/%s/select?q=%s", solrURL, solrCore, qp),
-		Protocol: "indexed-record"}
+		Protocol: "virgo-index"}
 	out.ServiceURL = append(out.ServiceURL, svcURL)
-	if doc.ShadowedLocationFacet[0] == "HIDDEN" {
+	if hasValue(doc.FeatureFacet, "iiif") {
+		svcURL := serviceURL{
+			URL:      fmt.Sprintf("%s/catalog/%s/iiif/manifest.json", virgoURL, doc.ID),
+			Protocol: "iiif-presentation"}
+		out.ServiceURL = append(out.ServiceURL, svcURL)
+	}
 
-	} else {
-
+	if hasValue(doc.ShadowedLocationFacet, "VISIBLE") || doc.ShadowedLocationFacet == nil {
+		// only non-shadowed items get metadata and access URLs
+		out.AccessURL = append(out.AccessURL, fmt.Sprintf("%s/catalog/%s", virgoURL, doc.ID))
+		if doc.MarcDisplay != "" {
+			out.MetadataURL = append(out.MetadataURL, fmt.Sprintf("%s/catalog/%s.xml", virgoURL, doc.ID))
+		}
 	}
 
 	c.JSON(http.StatusOK, out)
+}
+
+func hasValue(values []string, tgtVal string) bool {
+	for _, val := range values {
+		if val == tgtVal {
+			return true
+		}
+	}
+	return false
 }
 
 // getAPIResponse is a helper used to call a JSON endpoint and return the resoponse as a string
@@ -188,6 +214,7 @@ func main() {
 	flag.IntVar(&port, "port", 8080, "Aries Virgo port (default 8080)")
 	flag.StringVar(&solrURL, "solrurl", "http://solr.lib.virginia.edu:8082/solr", "Solr base URL")
 	flag.StringVar(&solrCore, "solrcore", "core", "Solr core")
+	flag.StringVar(&virgoURL, "virgourl", "https://search.lib.virginia.edu", "Virgo URL")
 	flag.Parse()
 
 	log.Printf("Setup routes...")
