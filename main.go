@@ -93,7 +93,7 @@ func healthCheckHandler(c *gin.Context) {
 /// ariesPing handles requests to the aries endpoint with no params.
 // Just returns and alive message
 func ariesPing(c *gin.Context) {
-	c.String(http.StatusOK, "APTrust Virgo API")
+	c.String(http.StatusOK, "Virgo Aries API")
 }
 
 // ariesLookup will query APTrust for information on the supplied identifer
