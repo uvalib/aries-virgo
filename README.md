@@ -1,4 +1,4 @@
-# Aries Virdo
+# Aries Virgo
 
 This is an implementation of the Aries API: https://confluence.lib.virginia.edu/display/DCMD/Aries for  Virgo
 
@@ -9,4 +9,4 @@ This is an implementation of the Aries API: https://confluence.lib.virginia.edu/
 
 * GET /version : return service version info
 * GET /healthcheck : test health of system components; results returned as JSON
-* GET /api/aries/[ID] : Get information about objects contained in APTrust that match the ID
+* GET /api/aries/[ID] : Get information about objects contained in Virgo that match the ID
