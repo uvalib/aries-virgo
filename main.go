@@ -160,7 +160,7 @@ func ariesLookup(c *gin.Context) {
 		out.ServiceURL = append(out.ServiceURL, svcURL)
 	}
 
-	if hasValue(doc.ShadowedLocationFacet, "VISIBLE") || doc.ShadowedLocationFacet == nil {
+	if doc.ShadowedLocationFacet == nil || hasValue(doc.ShadowedLocationFacet, "VISIBLE") {
 		// only non-shadowed items get metadata and access URLs
 		out.AccessURL = append(out.AccessURL, fmt.Sprintf("%s/catalog/%s", virgoURL, doc.ID))
 		if doc.MarcDisplay != "" {
