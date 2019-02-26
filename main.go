@@ -16,7 +16,7 @@ import (
 )
 
 // Version of the service
-const version = "1.0.0"
+const version = "1.1.0"
 
 // Config info; APTrust host and API key
 var solrURL string
@@ -112,7 +112,7 @@ func ariesLookup(c *gin.Context) {
 		return
 	}
 
-	log.Printf("Parsing solr response for #{passedID}")
+	log.Printf("Parsing solr response for %s", passedID)
 	var resp solrFullResponse
 	marshallErr := json.Unmarshal([]byte(respStr), &resp)
 	if marshallErr != nil {
